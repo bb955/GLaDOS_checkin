@@ -1,77 +1,128 @@
-import requests,json,os,pytz
+"""GLaDOS daily check-in with an explicit success/failure exit status."""
+
+import os
+import sys
 from datetime import datetime
+from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
-SIGNIN_URL = "https://glados.rocks/api/user/checkin"
-STATUS_URL = "https://glados.rocks/api/user/status"
-
-# 替换为你的 Cookie（不要加 cookie:）
-cookies = os.environ.get("GLADOS_COOKIE", []).split("&")
-if cookies[0] == "":
-        print('未获取到COOKIE变量') 
-        cookies = []
-        exit(0)
-else:
- cookies = cookies[0]
+import requests
 
 
-HEADERS = {
-    'cookie': cookies,
-    'user-agent': 'Mozilla/5.0',
-    'referer': 'https://glados.rocks/console/checkin',
-    'origin': 'https://glados.rocks',
-    'content-type': 'application/json;charset=UTF-8',
+DEFAULT_ORIGIN = "https://glados.cloud"
+ALLOWED_HOSTS = {
+    "glados.cloud",
+    "glados.rocks",
+    "glados.network",
+    "glados.one",
+    "glados.space",
+    "glados.vip",
+    "glados-facility.com",
 }
+ALREADY_MESSAGES = ("checkin repeats", "please try tomorrow", "今日已签到", "已经签到")
+SUCCESS_MESSAGES = ("checkin!", "today's observation logged", "签到成功")
+ERROR_MESSAGES = ("please checkin via", "没有权限", "unauthorized", "please login", "请登录")
+
+
+def get_origin():
+    origin = (os.environ.get("GLADOS_ORIGIN") or DEFAULT_ORIGIN).strip().rstrip("/")
+    parsed = urlparse(origin)
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname not in ALLOWED_HOSTS
+        or parsed.path
+        or parsed.port
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("GLADOS_ORIGIN 必须是支持的 GLaDOS HTTPS 主站域名")
+    return origin
+
+
+def request_json(session, method, url, **kwargs):
+    response = session.request(method, url, timeout=20, **kwargs)
+    response.raise_for_status()
+    result = response.json()
+    if not isinstance(result, dict):
+        raise ValueError("GLaDOS 接口未返回预期的 JSON 对象")
+    return result
+
+
+def short_message(result):
+    # Never log complete responses: they may contain private account data.
+    return str(result.get("message") or "无具体说明").replace("\n", " ").replace("\r", " ")[:160]
+
+
+def masked_email(address):
+    if not isinstance(address, str) or "@" not in address:
+        return "未知"
+    local, domain = address.rsplit("@", 1)
+    return f"{local[:2]}***@{domain}"
+
 
 def check_in():
-    payload = {"token": "glados.one"}
+    cookie = os.environ.get("GLADOS_COOKIE", "").strip()
+    if not cookie:
+        raise ValueError("未配置 GLADOS_COOKIE：请在仓库 Actions Secrets 中添加或更新")
 
-    try:
-        res = requests.post(SIGNIN_URL, headers=HEADERS, json=payload)
-        res_json = res.json()
+    origin = get_origin()
+    host = urlparse(origin).hostname
+    headers = {
+        "cookie": cookie,
+        "user-agent": os.environ.get("GLADOS_UA", "Mozilla/5.0").strip() or "Mozilla/5.0",
+        "referer": f"{origin}/console/checkin",
+        "origin": origin,
+        "content-type": "application/json;charset=UTF-8",
+    }
 
-        # 获取账户状态
-        status = requests.get(STATUS_URL, headers=HEADERS).json()
-        balance = '?'
-        email = '未知'
-        left_days = '?'
+    with requests.Session() as session:
+        status = request_json(session, "GET", f"{origin}/api/user/status", headers=headers)
+        account = status.get("data")
+        if status.get("code") != 0 or not isinstance(account, dict):
+            raise RuntimeError(
+                f"账号验证失败：{short_message(status)}。请重新登录 {host} 并更新 GLADOS_COOKIE"
+            )
 
-        if status.get('code') == 0:
-            data = status['data']
-            email = data.get("email", "未知")
-            left_days = data.get("leftDays", "未知")
+        result = request_json(
+            session,
+            "POST",
+            f"{origin}/api/user/checkin",
+            headers=headers,
+            json={"token": host},
+        )
 
-        # ��� 签到奖励明细处理（包含时间戳）
-        reward_time_str = "未知时间"
-        if 'list' in res_json and len(res_json['list']) > 0:
-            latest_reward = res_json['list'][0]
-            asset = latest_reward.get('asset', '未知')
-            change = latest_reward.get('change', '?')
-            balance = latest_reward.get('balance', '?')
+    message = short_message(result)
+    lowered = message.lower()
+    if any(marker in lowered for marker in ERROR_MESSAGES):
+        raise RuntimeError(f"签到被拒绝：{message}。请检查登录域名、Cookie 和 GLADOS_UA")
 
-            # 转换时间戳（毫秒转秒）
-            timestamp = latest_reward.get('time')
-            print(f" 0000000 --------------------> {timestamp }")
-            tz = pytz.timezone("Asia/Shanghai")
-            if timestamp:
-                reward_time = datetime.fromtimestamp(timestamp/ 1000, tz)
-                reward_time_str = reward_time.strftime("%Y-%m-%d %H:%M:%S")
+    if any(marker in lowered for marker in ALREADY_MESSAGES):
+        outcome = "今日已签到"
+    elif result.get("code") == 0 or any(marker in lowered for marker in SUCCESS_MESSAGES):
+        outcome = "签到成功"
+    else:
+        raise RuntimeError(f"签到未确认成功：{message}（code={result.get('code')}）")
 
-            print(f" 签到时间：{reward_time_str}")
-            print(f" 签到状态：{'签到成功' if res_json.get('code') == 0 else '今日已签到'}")
-            print(" 今日奖励明细：")
-            print(f"  - {asset} 变动：+{change}，余额：{balance}")
-        else:
-            print(" 今日已签到（无奖励记录）")
+    print(f"{outcome}：{message}")
+    print(f"账号：{masked_email(account.get('email'))}")
+    left_days = account.get("leftDays")
+    if left_days is not None:
+        print(f"剩余服务天数：{left_days}")
 
-        # ��� 输出账户信息
-        print(" 账户信息：")
-        print(f"  - 邮箱：{email}")
-        print(f"  - 当前总积分：{balance}")
-        print(f"  - 剩余服务天数：{int(float(left_days))} 天")
+    rewards = result.get("list")
+    if outcome == "签到成功" and isinstance(rewards, list) and rewards and isinstance(rewards[0], dict):
+        reward = rewards[0]
+        print(f"奖励变化：{reward.get('change', '未知')}，积分余额：{reward.get('balance', '未知')}")
+        if isinstance(reward.get("time"), (int, float)):
+            when = datetime.fromtimestamp(reward["time"] / 1000, ZoneInfo("Asia/Shanghai"))
+            print(f"奖励时间：{when:%Y-%m-%d %H:%M:%S}")
 
-    except Exception as e:
-        print(" 请求出错：", str(e))
 
 if __name__ == "__main__":
-    check_in()
-
+    try:
+        check_in()
+    except (requests.RequestException, ValueError, RuntimeError) as exc:
+        print(f"::error::GLaDOS 签到失败：{exc}", file=sys.stderr)
+        sys.exit(1)
