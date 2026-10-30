@@ -56,10 +56,11 @@ def get_user_agent():
     ua = (os.environ.get("GLADOS_USER_AGENT") or os.environ.get("GLADOS_UA") or "").strip()
     if not ua or ua == "Mozilla/5.0":
         raise ValueError(
-            "缺少有效的 GLADOS_USER_AGENT。请填写取得 Cookie 时同一浏览器的完整 User-Agent；"
-            "未配置前不请求 GLaDOS 签到接口"
+            "缺少有效的 GLADOS_USER_AGENT。请在 GitHub Actions 的 Secrets 或 Variables 中"
+            "填写与取得 Cookie 时同一浏览器的完整 User-Agent；"
+            "此值无法从 Cookie 推导，未配置前不请求签到接口"
         )
-    if "\\r" in ua or "\\n" in ua:
+    if "\r" in ua or "\n" in ua:
         raise ValueError("GLADOS_USER_AGENT 包含非法换行")
     return ua
 
