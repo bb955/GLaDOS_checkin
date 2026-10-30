@@ -1,0 +1,57 @@
+name: One-time account status check (no check-in)
+
+on:
+  push:
+    branches:
+      - fix/glados-auth-2026-10-30
+    paths:
+      - .github/workflows/account-status-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-status:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install requests
+        run: python -m pip install requests
+      - name: Verify existing GLaDOS Cookie (GET only; never check in)
+        env:
+          GLADOS_COOKIE: "${{ secrets.GLADOS_COOKIE }}"
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          import requests
+
+          cookie = os.environ.get("GLADOS_COOKIE", "").strip()
+          parts = {}
+          for part in cookie.split(";"):
+              key, sep, value = part.strip().partition("=")
+              if sep:
+                  parts[key] = value
+          if not (parts.get("gld:sess") and parts.get("gld:sess.sig")):
+              print("::error::GLADOS_COOKIE 缺少登录会话及签名（不展示凭据）")
+              sys.exit(1)
+          try:
+              result = requests.get(
+                  "https://glados.cloud/api/user/status",
+                  headers={"Cookie": cookie, "User-Agent": "Mozilla/5.0"},
+                  timeout=20,
+              )
+              result.raise_for_status()
+              payload = result.json()
+              if isinstance(payload, dict) and str(payload.get("code")) == "0" and isinstance(payload.get("data"), dict):
+                  print("GLaDOS 账号状态查询成功；Cookie 可读取账号。没有发送签到请求。")
+              else:
+                  print("::error::账号状态查询未获确认；请检查现有 Cookie 是否有效。")
+                  sys.exit(1)
+          except (requests.RequestException, ValueError):
+              print("::error::账号状态查询遇到 HTTP、网络或 JSON 错误；没有发送签到请求。")
+              sys.exit(1)
+          PY
