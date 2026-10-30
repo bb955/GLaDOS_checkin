@@ -1,32 +1,43 @@
-name: 开始每日签到
+name: GLaDOS Daily Check-in (Rewritten)
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'status = only verify login; checkin = request actual daily check-in'
+        required: true
+        default: checkin
+        type: choice
+        options:
+          - checkin
+          - status
   schedule:
-    # UTC 10:00（北京时间 18:00）
-    - cron: '0 10 * * *'
-  # 标星时触发工作流程
-  watch:
-    types: [started]
+    # UTC 10:17 = Beijing/Taipei 18:17. GitHub does not guarantee on-time delivery.
+    - cron: '17 10 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: glados-checkin
+  cancel-in-progress: false
 
 jobs:
-  build:
+  checkin:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install requirements
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests
-          pip install pytz
-      - name: Run checkin
-        run: |
-          python3 glados.py
-        env: 
-          GLADOS_COOKIE: "${{ secrets.GLADOS_COOKIE }}"
-          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
-      #- uses: gh-workflow-keepalive/releases@v1.2.1
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Unit tests (no account access)
+        run: python -m unittest discover -s tests -v
+      - name: Account status or real check-in
+        env:
+          GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
+          GLADOS_USER_AGENT: ${{ secrets.GLADOS_USER_AGENT || vars.GLADOS_USER_AGENT || secrets.GLADOS_UA }}
+          CHECKIN_MODE: ${{ inputs.mode || 'checkin' }}
+        run: python checkin.py --mode "$CHECKIN_MODE"
