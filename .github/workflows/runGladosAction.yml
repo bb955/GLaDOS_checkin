@@ -3,31 +3,30 @@ name: 开始每日签到
 on:
   workflow_dispatch:
   schedule:
-    # UTC 1点30分(北京时间 9点30分)
-    - cron: '0 10 * * *'
-  # 标星时触发工作流程
-  watch:
-    types: [started]
+    # UTC 10:17（北京时间 18:17），减少整点调度拥堵
+    - cron: '17 10 * * *'
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
-      - name: Set up Python 3.9
+      - name: Set up Python 3.12
         uses: actions/setup-python@v6
         with:
-          python-version: 3.9
+          python-version: '3.12'
       - name: Install requirements
         run: |
-          python -m pip install --upgrade pip
           pip install requests
-          pip install pytz
-          pip install encode
+      - name: Offline regression tests
+        run: python3 -m unittest discover -s tests -v
       - name: Run checkin
         run: |
           python3 glados.py
-        env: 
+        env:
           GLADOS_COOKIE: "${{ secrets.GLADOS_COOKIE }}"
-          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          GLADOS_USER_AGENT: "${{ secrets.GLADOS_USER_AGENT || vars.GLADOS_USER_AGENT || secrets.GLADOS_UA }}"
+          GLADOS_ORIGIN: "${{ vars.GLADOS_ORIGIN }}"
       #- uses: gh-workflow-keepalive/releases@v1.2.1
