@@ -49,6 +49,16 @@ class CheckinTests(unittest.TestCase):
         self.addCleanup(self.session_patch.stop)
         return session
 
+    def test_rejects_carriage_return_in_user_agent(self):
+        os.environ["GLADOS_USER_AGENT"] = "Mozilla/5.0\rHeader: forged"
+        with self.assertRaisesRegex(ValueError, "非法换行"):
+            glados.get_user_agent()
+
+    def test_rejects_line_feed_in_user_agent(self):
+        os.environ["GLADOS_USER_AGENT"] = "Mozilla/5.0\nHeader: forged"
+        with self.assertRaisesRegex(ValueError, "非法换行"):
+            glados.get_user_agent()
+
     def test_missing_user_agent_stops_before_network(self):
         os.environ.pop("GLADOS_UA", None)
         os.environ.pop("GLADOS_USER_AGENT", None)
