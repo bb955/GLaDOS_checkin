@@ -79,6 +79,23 @@ class ClassifyTests(unittest.TestCase):
                 "message": "Automated check-in detected. Please sign in again to continue.",
             })
 
+    def test_code_four_device_mismatch_reason_is_actionable(self):
+        with self.assertRaisesRegex(checkin.CheckinError, "device-mismatch"):
+            checkin.classify_checkin({
+                "code": 4, "reason": "device-mismatch",
+                "message": "Automated check-in detected",
+            })
+
+    def test_code_four_does_not_log_untrusted_device_payload(self):
+        with self.assertRaises(checkin.CheckinError) as caught:
+            checkin.classify_checkin({
+                "code": 4, "reason": "unrecognized",
+                "loginDevice": "private-device-identifier",
+                "message": "Automated check-in detected",
+            })
+        self.assertNotIn("private-device-identifier", str(caught.exception))
+        self.assertNotIn("unrecognized", str(caught.exception))
+
     def test_code_zero_unknown(self):
         with self.assertRaisesRegex(checkin.CheckinError, "没有确认"):
             checkin.classify_checkin({"code": 0, "message": "unrecognized"})
