@@ -21,7 +21,16 @@ ALLOWED_HOSTS = {
 }
 ALREADY_MESSAGES = ("checkin repeats", "please try tomorrow", "今日已签到", "已经签到")
 SUCCESS_MESSAGES = ("checkin!", "today's observation logged", "签到成功")
-ERROR_MESSAGES = ("please checkin via", "没有权限", "unauthorized", "please login", "请登录")
+ERROR_MESSAGES = (
+    "automated check-in detected",
+    "please checkin via",
+    "没有权限",
+    "unauthorized",
+    "please login",
+    "please sign in",
+    "请登录",
+    "forbidden",
+)
 
 
 def get_origin():
@@ -39,6 +48,30 @@ def get_origin():
     ):
         raise ValueError("GLADOS_ORIGIN 必须是支持的 GLaDOS HTTPS 主站域名")
     return origin
+
+
+def get_user_agent():
+    # Newer GLaDOS sessions may be tied to the login browser platform.
+    # Never invent a browser identity: use the one configured by the account owner.
+    ua = (os.environ.get("GLADOS_USER_AGENT") or os.environ.get("GLADOS_UA") or "").strip()
+    if not ua or ua == "Mozilla/5.0":
+        raise ValueError(
+            "缺少有效的 GLADOS_USER_AGENT。请填写取得 Cookie 时同一浏览器的完整 User-Agent；"
+            "未配置前不请求 GLaDOS 签到接口"
+        )
+    if "\\r" in ua or "\\n" in ua:
+        raise ValueError("GLADOS_USER_AGENT 包含非法换行")
+    return ua
+
+
+def validate_cookie(cookie):
+    fields = {}
+    for part in cookie.split(";"):
+        name, separator, value = part.strip().partition("=")
+        if separator:
+            fields[name] = value
+    if not (fields.get("gld:sess") and fields.get("gld:sess.sig")):
+        raise ValueError("GLADOS_COOKIE 缺少 gld:sess 或 gld:sess.sig，请刷新完整登录 Cookie")
 
 
 def request_json(session, method, url, **kwargs):
@@ -67,11 +100,13 @@ def check_in():
     if not cookie:
         raise ValueError("未配置 GLADOS_COOKIE：请在仓库 Actions Secrets 中添加或更新")
 
+    validate_cookie(cookie)
+    user_agent = get_user_agent()
     origin = get_origin()
     host = urlparse(origin).hostname
     headers = {
         "cookie": cookie,
-        "user-agent": os.environ.get("GLADOS_UA", "Mozilla/5.0").strip() or "Mozilla/5.0",
+        "user-agent": user_agent,
         "referer": f"{origin}/console/checkin",
         "origin": origin,
         "content-type": "application/json;charset=UTF-8",
@@ -95,15 +130,25 @@ def check_in():
 
     message = short_message(result)
     lowered = message.lower()
+    code = str(result.get("code"))
+    if code == "4":
+        detail = result.get("reason")
+        if not detail and isinstance(result.get("data"), dict):
+            detail = result["data"].get("reason")
+        reason = f"，原因：{str(detail)[:50]}" if isinstance(detail, str) and detail else ""
+        raise RuntimeError(
+            f"GLaDOS 拒绝自动签到（code=4{reason}）：{message}。"
+            "请确认 GLADOS_USER_AGENT 与登录浏览器一致；服务器也可能禁止自动请求"
+        )
     if any(marker in lowered for marker in ERROR_MESSAGES):
-        raise RuntimeError(f"签到被拒绝：{message}。请检查登录域名、Cookie 和 GLADOS_UA")
+        raise RuntimeError(f"签到被拒绝：{message}（code={code}）")
 
-    if any(marker in lowered for marker in ALREADY_MESSAGES):
+    if code in ("0", "1") and any(marker in lowered for marker in ALREADY_MESSAGES):
         outcome = "今日已签到"
-    elif result.get("code") == 0 or any(marker in lowered for marker in SUCCESS_MESSAGES):
+    elif code == "0" and any(marker in lowered for marker in SUCCESS_MESSAGES):
         outcome = "签到成功"
     else:
-        raise RuntimeError(f"签到未确认成功：{message}（code={result.get('code')}）")
+        raise RuntimeError(f"签到未确认成功：{message}（code={code}）")
 
     print(f"{outcome}：{message}")
     print(f"账号：{masked_email(account.get('email'))}")
