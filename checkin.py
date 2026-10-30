@@ -74,11 +74,24 @@ def api_json(session: requests.Session, method: str, endpoint: str,
 def classify_checkin(payload: dict[str, Any]) -> str:
     code = str(payload.get("code", "missing"))
     message = str(payload.get("message") or "").strip().lower()
-    if code == "4" or any(mark in message for mark in REJECTION_MARKERS):
+    if code == "4":
+        # Only report a known, non-sensitive reason. Never log the response body,
+        # account identifiers, cookies or the complete device fingerprint.
+        reason = payload.get("reason")
+        reason_hint = (
+            "服务端报告登录设备平台不一致（reason=device-mismatch）。"
+            if reason == "device-mismatch" else
+            "服务端未提供可确定的设备不匹配原因。"
+        )
+        raise CheckinError(
+            f"GLaDOS 拒绝自动签到（code=4）。{reason_hint}"
+            "当前 Cookie 虽可能有效，但应核对与登录会话一致的 GLADOS_USER_AGENT。"
+            "若仍被拒绝，应通过官方网页签到；不会自动重试或误报成功"
+        )
+    if any(mark in message for mark in REJECTION_MARKERS):
         raise CheckinError(
             f"GLaDOS 服务端拒绝签到请求（code={code}）。"
             "Cookie 即使能查询账号，也不代表服务端允许自动签到。"
-            "请先在 GitHub Actions 配置登录浏览器的真实 GLADOS_USER_AGENT；"
             "若仍被拒绝，应通过官方网页手动签到，不会自动重试"
         )
     if code in {"0", "1"} and any(mark in message for mark in ALREADY_MARKERS):
