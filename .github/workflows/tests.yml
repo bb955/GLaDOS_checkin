@@ -3,6 +3,7 @@ name: Unit tests
 on:
   push:
     branches:
+      - main
       - 'rewrite/glados-standalone-2026-10-30'
   pull_request:
   workflow_dispatch:
