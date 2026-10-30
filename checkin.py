@@ -76,8 +76,10 @@ def classify_checkin(payload: dict[str, Any]) -> str:
     message = str(payload.get("message") or "").strip().lower()
     if code == "4" or any(mark in message for mark in REJECTION_MARKERS):
         raise CheckinError(
-            f"GLaDOS 服务端拒绝自动签到（code={code}）。"
-            "请核对同一登录浏览器的 User-Agent；若站点禁止自动签到，请改为手动签到"
+            f"GLaDOS 服务端拒绝签到请求（code={code}）。"
+            "Cookie 即使能查询账号，也不代表服务端允许自动签到。"
+            "请先在 GitHub Actions 配置登录浏览器的真实 GLADOS_USER_AGENT；"
+            "若仍被拒绝，应通过官方网页手动签到，不会自动重试"
         )
     if code in {"0", "1"} and any(mark in message for mark in ALREADY_MARKERS):
         return "今日已签到"
@@ -93,8 +95,9 @@ def run(mode: str, settings: Settings, session: requests.Session | None = None) 
     # A basic UA is sufficient for an account-status-only diagnostic.
     if mode == "checkin" and not settings.user_agent:
         raise CheckinError(
-            "缺少 GLADOS_USER_AGENT；必须使用取得 Cookie 时的浏览器 User-Agent。"
-            "没有该配置时不会尝试自动签到"
+            "缺少 GLADOS_USER_AGENT。请在取得 Cookie 的同一浏览器中运行 navigator.userAgent，"
+            "把结果保存到本仓库 Settings → Secrets and variables → Actions → Variables，"
+            "变量名 GLADOS_USER_AGENT；未配置前不会发送签到请求"
         )
 
     headers = {
