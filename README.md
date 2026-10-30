@@ -36,6 +36,14 @@ python checkin.py --mode status
 python checkin.py --mode checkin
 ```
 
+## 2026-10-30 实际运行诊断
+
+- 已有仓库 Secret `GLADOS_COOKIE` **能够通过账号状态接口**。不要把它粘贴进源码、GitHub Variable、Issue 或日志。
+- 使用该现有 Cookie **真实请求一次签到接口**，服务器返回 `code=4`（Automated check-in detected），签到失败；不是单元测试失败。
+- 本仓库目前尚未配置 `GLADOS_USER_AGENT`。请在最初获取 Cookie 的**同一个浏览器**里执行 `navigator.userAgent`，将结果作为仓库的 Actions Variable `GLADOS_USER_AGENT`，不要提供 Cookie 原文。
+- 以上只能补齐合法配置，**不保证服务器会允许自动签到**。若补齐仍被服务器拒绝，程序会报告失败而不是伪装成功；请使用 GLaDOS 官方页面签到。
+- 单次在线诊断已执行并移除临时工作流，正式保留一套每日定时签到，不重复触发。
+
 ## 错误说明
 
 - `缺少 GLADOS_COOKIE`：Repository Secret 未配置。
