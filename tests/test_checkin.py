@@ -72,6 +72,13 @@ class ClassifyTests(unittest.TestCase):
         with self.assertRaisesRegex(checkin.CheckinError, "code=4"):
             checkin.classify_checkin({"code": 4, "message": "Automated check-in detected"})
 
+    def test_code_four_message_explains_no_auto_retry(self):
+        with self.assertRaisesRegex(checkin.CheckinError, "不会自动重试"):
+            checkin.classify_checkin({
+                "code": 4,
+                "message": "Automated check-in detected. Please sign in again to continue.",
+            })
+
     def test_code_zero_unknown(self):
         with self.assertRaisesRegex(checkin.CheckinError, "没有确认"):
             checkin.classify_checkin({"code": 0, "message": "unrecognized"})
