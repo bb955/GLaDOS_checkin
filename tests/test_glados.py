@@ -49,6 +49,26 @@ class CheckinTests(unittest.TestCase):
         self.addCleanup(self.session_patch.stop)
         return session
 
+    def test_missing_user_agent_stops_before_network(self):
+        os.environ.pop("GLADOS_UA", None)
+        os.environ.pop("GLADOS_USER_AGENT", None)
+        with self.assertRaisesRegex(ValueError, "GLADOS_USER_AGENT"):
+            glados.check_in()
+
+    def test_new_ua_environment_name(self):
+        os.environ["GLADOS_USER_AGENT"] = "Actual Browser UA"
+        self.assertEqual(glados.get_user_agent(), "Actual Browser UA")
+
+    def test_code_four_never_accepted(self):
+        self.fake_session({"code": 4, "message": "Automated check-in detected. Please sign in again to continue."})
+        with self.assertRaisesRegex(RuntimeError, "code=4"):
+            glados.check_in()
+
+    def test_unknown_success_code_zero_not_accepted(self):
+        self.fake_session({"code": 0, "message": "unrecognized"})
+        with self.assertRaisesRegex(RuntimeError, "未确认成功"):
+            glados.check_in()
+
     def test_missing_cookie_fails(self):
         os.environ["GLADOS_COOKIE"] = ""
         with self.assertRaisesRegex(ValueError, "GLADOS_COOKIE"):
