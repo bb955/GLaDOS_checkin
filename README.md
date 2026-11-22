@@ -43,7 +43,7 @@ python checkin.py --mode checkin
 - 本项目已改为每次签到先获取新 challenge，等待 2.7 秒，并在同一 `glados.cloud` 域名提交；challenge 失败、nonce 无效或超时则停止，不会回退到旧接口。
 - `GLADOS_COOKIE` 和 `GLADOS_USER_AGENT` 已在近期运行日志中传入；当前错误与缺少 challenge 协议相符，不应继续盲目更换 Cookie 或 UA。
 - 该协议变化参考社区维护项目的更新记录；最终是否签到成功仍以本仓库真实运行日志和 GLaDOS 账号记录为准。
-- 2026-11-22 首次 challenge 协议线上验证仍返回 `code=5`；进一步比对维护项目发现还需匹配浏览器 `Accept`、`Sec-Fetch-*` 与 `Sec-CH-UA` 请求头。本版已补齐这些与真实 User-Agent 对应的请求头，待再次线上验证。
+- 2026-11-22 首次 challenge 协议线上验证仍返回 `code=5`。进一步比对维护项目后，已补齐浏览器 `Accept`、`Sec-Fetch-*`、`Sec-CH-UA` 请求头，并将结果识别改为优先检查服务端明确的成功/重复签到消息，而不只依赖数字 code。只有命中已知成功文案才报告成功，未知响应仍失败。
 
 ## 错误说明
 
