@@ -116,6 +116,21 @@ class NetworkTests(unittest.TestCase):
         self.assertIn("Cookie 有效", checkin.run("status", checkin.Settings(SETTINGS.cookie, None), session))
         self.assertEqual([c[0] for c in session.calls], ["GET"])
 
+    def test_browser_client_hints_match_actual_chrome_user_agent(self):
+        settings = checkin.Settings(
+            SETTINGS.cookie,
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/156.0.0.0 Safari/537.36",
+        )
+        headers = checkin.build_headers(settings)
+        self.assertEqual(headers["User-Agent"], settings.user_agent)
+        self.assertIn('"Google Chrome";v="156"', headers["Sec-CH-UA"])
+        self.assertEqual(headers["Sec-CH-UA-Mobile"], "?0")
+        self.assertEqual(headers["Sec-CH-UA-Platform"], '"macOS"')
+        self.assertEqual(headers["Sec-Fetch-Site"], "same-origin")
+        self.assertEqual(headers["Accept"], "application/json, text/plain, */*")
+
     def test_checkin_success_uses_fresh_challenge_and_proof(self):
         nonce = "fresh-nonce"
         session = FakeSession(
