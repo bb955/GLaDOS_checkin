@@ -140,11 +140,11 @@ def classify_checkin(payload: dict[str, Any]) -> str:
             "Cookie 即使能查询账号，也不代表服务端允许自动签到。"
             "若仍被拒绝，应通过官方网页手动签到，不会自动重试"
         )
-    if code in {"0", "1"} and any(mark in message for mark in ALREADY_MARKERS):
+    # The current API's result code is not the sole success signal.
+    # Match the same explicit success/duplicate messages used by the maintained client.
+    if any(mark in message for mark in ALREADY_MARKERS):
         return "今日已签到"
-    if code in {"0", "1"} and "today's observation logged" in message:
-        return "签到成功"
-    if code == "0" and any(mark in message for mark in SUCCESS_MARKERS):
+    if any(mark in message for mark in SUCCESS_MARKERS):
         return "签到成功"
     raise CheckinError(f"服务端没有确认签到成功（code={code}），不将任务标记为成功")
 
