@@ -19,7 +19,7 @@ from checkin import CheckinError, classify_checkin
 ORIGIN = "https://glados.cloud"
 CHECKIN_PAGE = f"{ORIGIN}/console/checkin"
 CHECKIN_API = f"{ORIGIN}/api/user/checkin"
-BUTTON_NAME = re.compile(r"check[\\s-]*in|签到", re.IGNORECASE)
+BUTTON_NAME = re.compile(r"check[\s-]*in|签到", re.IGNORECASE)
 LOGIN_AND_CHALLENGE_WAIT_SECONDS = 300
 RESULT_WAIT_SECONDS = 180
 
