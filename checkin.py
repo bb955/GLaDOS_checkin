@@ -121,6 +121,7 @@ def safe_response_tags(payload: dict[str, Any]) -> tuple[str, ...]:
     """Expose only coarse, allowlisted response categories; never log raw server text."""
     message = str(payload.get("message") or "").lower()
     categories = (
+        ("turnstile", ("turnstile", "cloudflare verification")),
         ("challenge", ("challenge", "挑战")),
         ("nonce", ("nonce", "随机数")),
         ("proof", ("proof", "签名", "证明")),
@@ -140,6 +141,13 @@ def safe_response_tags(payload: dict[str, Any]) -> tuple[str, ...]:
 def classify_checkin(payload: dict[str, Any]) -> str:
     code = str(payload.get("code", "missing"))
     message = str(payload.get("message") or "").strip().lower()
+    if payload.get("reason") == "turnstile" or "cloudflare verification failed" in message:
+        raise CheckinError(
+            f"GLaDOS 要求 Cloudflare Turnstile 人机验证（code={code}）。"
+            "GitHub Actions 机房环境无法可靠完成官网浏览器验证；"
+            "请在本机真实 Chrome/Edge 的 GLaDOS 官网页面完成验证。"
+            "不要继续重试或盲目更换 Cookie、User-Agent"
+        )
     if code == "4":
         # Only report a known, non-sensitive reason. Never log the response body,
         # account identifiers, cookies or the complete device fingerprint.
