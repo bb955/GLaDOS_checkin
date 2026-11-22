@@ -209,6 +209,17 @@ class NetworkTests(unittest.TestCase):
             "今日已签到",
         )
 
+    def test_unknown_response_reports_only_allowlisted_tags(self):
+        with self.assertRaises(checkin.CheckinError) as caught:
+            checkin.classify_checkin({
+                "code": 5,
+                "message": "Invalid proof for nonce challenge; account private@example.com",
+            })
+        message = str(caught.exception)
+        self.assertIn("响应特征=challenge,nonce,proof", message)
+        self.assertNotIn("private@example.com", message)
+        self.assertNotIn("Invalid proof", message)
+
     def test_code_five_unknown_message_remains_failure(self):
         with self.assertRaisesRegex(checkin.CheckinError, "code=5"):
             checkin.classify_checkin({"code": 5, "message": "unknown response"})
