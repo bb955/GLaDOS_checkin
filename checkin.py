@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import math
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -55,6 +56,46 @@ class Settings:
         if agent and ("\r" in agent or "\n" in agent):
             raise CheckinError("GLADOS_USER_AGENT 包含非法换行")
         return cls(cookie=cookie, user_agent=agent)
+
+
+def build_headers(settings: Settings) -> dict[str, str]:
+    """Build request headers consistent with the browser session that created the Cookie."""
+    user_agent = settings.user_agent or "Mozilla/5.0"
+    headers = {
+        "Cookie": settings.cookie,
+        "User-Agent": user_agent,
+        "Origin": ORIGIN,
+        "Referer": f"{ORIGIN}/console/checkin",
+        "Content-Type": "application/json;charset=UTF-8",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
+    }
+    chrome = re.search(r"(?:Chrome|Chromium)/(\\d+)", user_agent)
+    if chrome:
+        major = chrome.group(1)
+        if "Macintosh" in user_agent:
+            platform = "macOS"
+        elif "Windows" in user_agent:
+            platform = "Windows"
+        elif "Android" in user_agent:
+            platform = "Android"
+        elif "Linux" in user_agent:
+            platform = "Linux"
+        else:
+            platform = "Unknown"
+        headers.update({
+            "Sec-CH-UA": (
+                f'"Chromium";v="{major}", '
+                f'"Google Chrome";v="{major}", '
+                '"Not_A Brand";v="99"'
+            ),
+            "Sec-CH-UA-Mobile": "?1" if "Mobile" in user_agent else "?0",
+            "Sec-CH-UA-Platform": f'"{platform}"',
+        })
+    return headers
 
 
 def api_json(session: requests.Session, method: str, endpoint: str,
@@ -120,13 +161,7 @@ def run(mode: str, settings: Settings, session: requests.Session | None = None) 
             "变量名 GLADOS_USER_AGENT；未配置前不会发送签到请求"
         )
 
-    headers = {
-        "Cookie": settings.cookie,
-        "User-Agent": settings.user_agent or "Mozilla/5.0",
-        "Origin": ORIGIN,
-        "Referer": f"{ORIGIN}/console/checkin",
-        "Content-Type": "application/json;charset=UTF-8",
-    }
+    headers = build_headers(settings)
     created = session is None
     session = session or requests.Session()
     try:
