@@ -1,3 +1,4 @@
+import hashlib
 import os
 import unittest
 from unittest.mock import patch
@@ -115,12 +116,77 @@ class NetworkTests(unittest.TestCase):
         self.assertIn("Cookie 有效", checkin.run("status", checkin.Settings(SETTINGS.cookie, None), session))
         self.assertEqual([c[0] for c in session.calls], ["GET"])
 
-    def test_checkin_success(self):
-        session = FakeSession(FakeResponse(VALID_STATUS), FakeResponse({"code": 0, "message": "Checkin!"}))
-        self.assertEqual(checkin.run("checkin", SETTINGS, session), "签到成功")
-        self.assertEqual([c[0] for c in session.calls], ["GET", "POST"])
-        self.assertEqual(session.calls[1][2]["json"], {"token": "glados.cloud"})
-        self.assertEqual(session.calls[1][2]["headers"]["User-Agent"], "Actual Browser UA")
+    def test_checkin_success_uses_fresh_challenge_and_proof(self):
+        nonce = "fresh-nonce"
+        session = FakeSession(
+            FakeResponse(VALID_STATUS),
+            FakeResponse({"code": 0, "nonce": nonce, "ttl": 300000}),
+            FakeResponse({"code": 0, "message": "Checkin! Got 1 Point"}),
+        )
+        with patch("checkin.time.sleep") as sleep, patch(
+            "checkin.time.monotonic", side_effect=[100.0, 102.0]
+        ):
+            self.assertEqual(checkin.run("checkin", SETTINGS, session), "签到成功")
+        self.assertEqual([c[0] for c in session.calls], ["GET", "GET", "POST"])
+        self.assertTrue(session.calls[1][1].endswith("/api/user/checkin/challenge"))
+        expected_proof = hashlib.sha256(
+            (nonce + ".glados-observe-v1").encode("utf-8")
+        ).hexdigest()
+        self.assertEqual(
+            session.calls[2][2]["json"],
+            {"token": "glados.cloud", "nonce": nonce, "proof": expected_proof},
+        )
+        self.assertEqual(session.calls[2][1], checkin.CHECKIN_URL)
+        self.assertEqual(session.calls[2][2]["headers"]["User-Agent"], "Actual Browser UA")
+        sleep.assert_called_once_with(checkin.CHECKIN_CHALLENGE_DELAY)
+
+    def test_checkin_challenge_failure_never_posts(self):
+        session = FakeSession(
+            FakeResponse(VALID_STATUS),
+            FakeResponse({"code": 5, "message": "challenge required"}),
+        )
+        with self.assertRaisesRegex(checkin.CheckinError, "获取一次性签到验证失败"):
+            checkin.run("checkin", SETTINGS, session)
+        self.assertEqual([c[0] for c in session.calls], ["GET", "GET"])
+
+    def test_checkin_challenge_missing_nonce_never_posts(self):
+        session = FakeSession(
+            FakeResponse(VALID_STATUS),
+            FakeResponse({"code": 0, "ttl": 300000}),
+        )
+        with self.assertRaisesRegex(checkin.CheckinError, "获取一次性签到验证失败"):
+            checkin.run("checkin", SETTINGS, session)
+        self.assertEqual([c[0] for c in session.calls], ["GET", "GET"])
+
+    def test_checkin_challenge_expired_never_posts(self):
+        session = FakeSession(
+            FakeResponse(VALID_STATUS),
+            FakeResponse({"code": 0, "nonce": "fresh-nonce", "ttl": 300000}),
+        )
+        with patch("checkin.time.sleep"), patch(
+            "checkin.time.monotonic", side_effect=[100.0, 401.0]
+        ):
+            with self.assertRaisesRegex(checkin.CheckinError, "验证已过期"):
+                checkin.run("checkin", SETTINGS, session)
+        self.assertEqual([c[0] for c in session.calls], ["GET", "GET"])
+
+    def test_observation_logged_is_success(self):
+        self.assertEqual(
+            checkin.classify_checkin({
+                "code": 1,
+                "message": "Today's observation logged. Return tomorrow for more points.",
+            }),
+            "签到成功",
+        )
+
+    def test_checkin_repeats_is_already_done(self):
+        self.assertEqual(
+            checkin.classify_checkin({
+                "code": 1,
+                "message": "Checkin Repeats! Please Try Tomorrow",
+            }),
+            "今日已签到",
+        )
 
     def test_missing_ua_blocks_before_network(self):
         session = FakeSession()
