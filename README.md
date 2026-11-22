@@ -43,7 +43,7 @@ python checkin.py --mode checkin
 - 本项目已改为每次签到先获取新 challenge，等待 2.7 秒，并在同一 `glados.cloud` 域名提交；challenge 失败、nonce 无效或超时则停止，不会回退到旧接口。
 - `GLADOS_COOKIE` 和 `GLADOS_USER_AGENT` 已在近期运行日志中传入；当前错误与缺少 challenge 协议相符，不应继续盲目更换 Cookie 或 UA。
 - 该协议变化参考社区维护项目的更新记录；最终是否签到成功仍以本仓库真实运行日志和 GLaDOS 账号记录为准。
-- 2026-11-22 两次 challenge + 浏览器请求头真实验证仍返回未知 `code=5`，且没有命中已知成功/重复签到文案。为避免猜测，程序现在只在错误日志中输出有限的响应类别标签（challenge/nonce/proof/device/auth/rate-limit 等），不会输出原始响应、账号信息或凭据；等下一次定时运行再依据脱敏类别继续定位。
+- 2026-11-22 两次 challenge + 浏览器请求头真实验证仍返回未知 `code=5`。对照上游 2026-11-14 的最新实测，GLaDOS 已加入 Cloudflare Turnstile，纯 API 请求会返回 `code=5, reason=turnstile`；GitHub Actions 数据中心 IP 无通用可用方案。上游仅在本地真实 Chrome/Edge 中让官网页面自身完成 Turnstile，Actions 自动禁用浏览器兜底。见 [上游 Turnstile 修复提交](https://github.com/lankerr/2026-glados-checkin/commit/1f4cb3a309f600f255ef04474328795a7d7d9ebf)。本项目已增加 `reason=turnstile` 的明确报错和脱敏诊断，不会伪报成功。
 
 ## 错误说明
 
