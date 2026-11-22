@@ -1,6 +1,11 @@
 name: GLaDOS Daily Check-in (Rewritten)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/runGladosAction.yml
   workflow_dispatch:
     inputs:
       mode:
