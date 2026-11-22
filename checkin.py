@@ -117,6 +117,26 @@ def api_json(session: requests.Session, method: str, endpoint: str,
     return obj
 
 
+def safe_response_tags(payload: dict[str, Any]) -> tuple[str, ...]:
+    """Expose only coarse, allowlisted response categories; never log raw server text."""
+    message = str(payload.get("message") or "").lower()
+    categories = (
+        ("challenge", ("challenge", "挑战")),
+        ("nonce", ("nonce", "随机数")),
+        ("proof", ("proof", "签名", "证明")),
+        ("device", ("device", "设备")),
+        ("auth", ("login", "sign in", "unauthorized", "permission", "登录", "权限")),
+        ("rate-limit", ("rate", "limit", "too many", "频繁", "稍后", "等待")),
+        ("already", ("already", "repeat", "tomorrow", "已签到", "重复")),
+        ("checkin", ("checkin", "签到")),
+        ("token", ("token", "令牌")),
+    )
+    return tuple(
+        label for label, needles in categories
+        if any(needle in message for needle in needles)
+    )
+
+
 def classify_checkin(payload: dict[str, Any]) -> str:
     code = str(payload.get("code", "missing"))
     message = str(payload.get("message") or "").strip().lower()
@@ -146,7 +166,11 @@ def classify_checkin(payload: dict[str, Any]) -> str:
         return "今日已签到"
     if any(mark in message for mark in SUCCESS_MARKERS):
         return "签到成功"
-    raise CheckinError(f"服务端没有确认签到成功（code={code}），不将任务标记为成功")
+    tags = safe_response_tags(payload)
+    tag_text = f"；响应特征={','.join(tags)}" if tags else ""
+    raise CheckinError(
+        f"服务端没有确认签到成功（code={code}）{tag_text}，不将任务标记为成功"
+    )
 
 
 def run(mode: str, settings: Settings, session: requests.Session | None = None) -> str:
