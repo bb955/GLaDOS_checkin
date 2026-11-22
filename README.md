@@ -36,13 +36,13 @@ python checkin.py --mode status
 python checkin.py --mode checkin
 ```
 
-## 2026-10-30 实际运行诊断
+## 2026-11-22 实际故障定位与协议更新
 
-- 已有仓库 Secret `GLADOS_COOKIE` **能够通过账号状态接口**。不要把它粘贴进源码、GitHub Variable、Issue 或日志。
-- 使用该现有 Cookie **真实请求一次签到接口**，服务器返回 `code=4`（Automated check-in detected），签到失败；不是单元测试失败。
-- 本仓库目前尚未配置 `GLADOS_USER_AGENT`。请在最初获取 Cookie 的**同一个浏览器**里执行 `navigator.userAgent`，将结果作为仓库的 Actions Variable `GLADOS_USER_AGENT`，不要提供 Cookie 原文。
-- 以上只能补齐合法配置，**不保证服务器会允许自动签到**。若补齐仍被服务器拒绝，程序会报告失败而不是伪装成功；请使用 GLaDOS 官方页面签到。
-- 单次在线诊断已执行并移除临时工作流，正式保留一套每日定时签到，不重复触发。
+- 2026-11-12 的运行日志曾明确显示“签到成功”；从 2026-11-13 起，多次运行在离线测试通过后，真实签到返回 `code=5`。
+- 对照近期维护项目在 2026-11-06 发布的协议更新，当前官网签到流程要求先请求 `/api/user/checkin/challenge`，取得一次性 `nonce`，等待至少 2.5 秒，再提交 `token`、`nonce` 和 `SHA-256(nonce + ".glados-observe-v1")` proof。旧版只提交 token，缺少 challenge。
+- 本项目已改为每次签到先获取新 challenge，等待 2.7 秒，并在同一 `glados.cloud` 域名提交；challenge 失败、nonce 无效或超时则停止，不会回退到旧接口。
+- `GLADOS_COOKIE` 和 `GLADOS_USER_AGENT` 已在近期运行日志中传入；当前错误与缺少 challenge 协议相符，不应继续盲目更换 Cookie 或 UA。
+- 该协议变化参考社区维护项目的更新记录；最终是否签到成功仍以本仓库真实运行日志和 GLaDOS 账号记录为准。
 
 ## 错误说明
 
