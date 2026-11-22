@@ -1,56 +1,65 @@
-# GLaDOS 自动签到 · 全新精简版
+# GLaDOS 自动签到
 
-面向单个 GLaDOS 账号的 GitHub Actions 项目。与旧脚本分离；不自动兑换积分，也不尝试规避 GLaDOS 对自动签到的限制。
+本项目保留两条路径：GitHub 云端只做账号状态检查；真正签到使用 Mac 上的可见浏览器打开 GLaDOS 官方页面，让官网自己执行验证和签到。
 
-## 功能
+## 当前故障结论（2026-11-23）
 
-- `status`：使用现有 Cookie 查询账号状态；**不发起签到**。
-- `checkin`：先校验登录状态，再请求 `https://glados.cloud/api/user/checkin`，只有服务端明确回复签到成功或今日已签到才返回成功。
-- 遇到 `code=4`（Automated check-in detected）直接失败，不进行 UA 伪造或反复尝试。
-- Cookie、账号资料和完整服务器响应均不输出到公开日志。
-- Python 3.12、Ubuntu 24.04；`requests` 唯一依赖；包含 18 项以上单元测试。
+最近一次 GitHub Actions 真实运行中，33 项离线测试通过，账号状态接口也认可现有登录会话，但真正签到被 Cloudflare Turnstile 拦截（`code=5`）。这说明 Cookie 可用，不代表云端 API 请求能通过人机验证。
 
-## 配置
+因此：
 
-在 GitHub → 仓库 → **Settings → Secrets and variables → Actions** 中：
+- `checkin.py --mode status`：只检查登录状态，不签到。
+- `checkin.py --mode checkin`：旧的直接 API 路径；当前可能被 Turnstile 拦截，不应在 GitHub 云端反复重试。
+- `browser_checkin.py`：用 Playwright 打开官网真实页面，只点击官网签到按钮并读取官网返回结果；不伪造浏览器指纹、不提取或重放 Turnstile token、不绕过人工验证。
+- `docs/workflows/glados-browser-checkin.yml`：Mac 自托管 Runner 工作流模板。**只能复制到新的私有仓库中启用。**
 
-1. **Repository secret：** `GLADOS_COOKIE`，取自你自己在 `glados.cloud` 的已登录会话，应同时具有 `gld:sess`、`gld:sess.sig`。**不要提交到代码**，不要粘贴到 Issue、公开日志或聊天。
-2. **Repository variable 或 secret：** `GLADOS_USER_AGENT`，值必须是**获取 Cookie 时同一个浏览器**的完整 UA。可以在该浏览器的 Console 输入 `navigator.userAgent` 读取。不提供时，`status` 可查询登录状态，但 `checkin` 会拒绝尝试，避免无意义的请求。
+## 为什么需要新的私有仓库
 
-旧名称 `GLADOS_UA` Secret 也兼容。
+当前 `bb955/GLaDOS_checkin` 是公开仓库，而且是一个公开 fork。GitHub 官方不建议在公开仓库使用自托管 Runner：公开仓库的 Pull Request 可能修改工作流并在 Runner 上执行不可信代码，从而危及 Mac 上的文件和浏览器登录态。公开 fork 也不能单独改成私有仓库。
 
-本项目当前使用固定主站 `glados.cloud`，不会将 Cookie 发送到其他站点。新仓库必须重新配置 Secret；**GitHub 不会跨仓库共享 Repository Secrets**。若将本项目放在已有仓库的新分支，现有同名 Secrets 可以复用。
+请新建一个**独立的 Private repository（不要点 Fork）**，再把本项目代码复制过去。官方说明：
+- [GitHub：自托管 Runner 安全建议](https://docs.github.com/en/actions/reference/security/secure-use)
+- [GitHub：Fork 的可见性规则](https://docs.github.com/en/pull-requests/reference/forks)
 
-## 使用
+## 启用 Mac 浏览器签到
 
-在 Actions → **GLaDOS Daily Check-in (Rewritten)** → **Run workflow** 中选择分支和模式，先运行 `status`，确认账号有效后再执行 `checkin`。工作流文件需要位于仓库默认分支，GitHub 才能提供手动触发入口；当前仅在开发分支创建时可能需要先合并或上传为默认分支。
+1. 新建一个 GitHub 私有仓库，例如 `GLaDOS_checkin_private`。
+2. 把本仓库的代码推送到新仓库。可以在 Mac 终端执行：
 
-正式默认分支每天 UTC 10:17（北京时间/台北时间 **18:17**）计划签到。GitHub 定时触发不保证精确到分钟。
+   ```bash
+   git clone https://github.com/bb955/GLaDOS_checkin.git
+   cd GLaDOS_checkin
+   git remote remove origin
+   git remote add origin https://github.com/你的用户名/GLaDOS_checkin_private.git
+   git push -u origin main
+   ```
 
-在本地执行：
+3. 在新私有仓库中，把 `docs/workflows/glados-browser-checkin.yml` 复制为 `.github/workflows/glados-browser-checkin.yml`。
+4. 在新私有仓库打开 **Settings → Actions → Runners → New self-hosted runner**，选择 macOS。GitHub 会显示专属下载和注册命令；按页面指示在 Mac 上执行。注册令牌是短时有效的，不要发给别人。
+5. 第一次先在 Mac 的已登录桌面会话中，从终端运行 Runner 的 `./run.sh`，不要先安装成后台服务。这样浏览器窗口才有机会显示出来。保持终端和 Mac 唤醒，Runner 才能接收定时任务。
+6. 在新私有仓库的 **Actions → GLaDOS Browser Check-in (Mac) → Run workflow** 手动运行一次。浏览器首次打开时，在该专用 Chromium 窗口登录 GLaDOS；如果页面要求 Turnstile 人工验证，就由你本人完成。登录状态保存在 Mac 本地的：
+
+   ```
+   ~/Library/Application Support/GLaDOSCheckin/ChromiumProfile
+   ```
+
+   不需要把 Cookie 或 User-Agent 放进新仓库的 Secrets。这个浏览器配置目录不要上传到 GitHub，也不要删除，否则需要重新登录。
+7. 之后工作流每天按 UTC 10:17（北京时间/台北时间 18:17）尝试签到。Mac 必须开机、唤醒，并且 Runner 正在运行；如果 Turnstile 要求人工点击而你不在电脑旁，该次仍会失败，不会伪报成功。
+
+## 本地手动运行
+
+在 Mac 终端执行：
 
 ```bash
-python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
-python checkin.py --mode status
-python checkin.py --mode checkin
+python3 -m pip install -r requirements-browser.txt
+python3 -m playwright install chromium
+python3 browser_checkin.py
 ```
 
-## 2026-11-22 实际故障定位与协议更新
+第一次运行会打开专用浏览器窗口，需要你登录并按页面要求验证。后续使用同一个本地浏览器配置。
 
-- 2026-11-12 的运行日志曾明确显示“签到成功”；从 2026-11-13 起，多次运行在离线测试通过后，真实签到返回 `code=5`。
-- 对照近期维护项目在 2026-11-06 发布的协议更新，当前官网签到流程要求先请求 `/api/user/checkin/challenge`，取得一次性 `nonce`，等待至少 2.5 秒，再提交 `token`、`nonce` 和 `SHA-256(nonce + ".glados-observe-v1")` proof。旧版只提交 token，缺少 challenge。
-- 本项目已改为每次签到先获取新 challenge，等待 2.7 秒，并在同一 `glados.cloud` 域名提交；challenge 失败、nonce 无效或超时则停止，不会回退到旧接口。
-- `GLADOS_COOKIE` 和 `GLADOS_USER_AGENT` 已在近期运行日志中传入；当前错误与缺少 challenge 协议相符，不应继续盲目更换 Cookie 或 UA。
-- 该协议变化参考社区维护项目的更新记录；最终是否签到成功仍以本仓库真实运行日志和 GLaDOS 账号记录为准。
-- 2026-11-22 两次 challenge + 浏览器请求头真实验证仍返回未知 `code=5`。对照上游 2026-11-14 的最新实测，GLaDOS 已加入 Cloudflare Turnstile，纯 API 请求会返回 `code=5, reason=turnstile`；GitHub Actions 数据中心 IP 无通用可用方案。上游仅在本地真实 Chrome/Edge 中让官网页面自身完成 Turnstile，Actions 自动禁用浏览器兜底。见 [上游 Turnstile 修复提交](https://github.com/lankerr/2026-glados-checkin/commit/1f4cb3a309f600f255ef04474328795a7d7d9ebf)。本项目已增加 `reason=turnstile` 的明确报错和脱敏诊断，不会伪报成功。
+## 现有云端工作流
 
-## 错误说明
+`.github/workflows/runGladosAction.yml` 现在只执行状态检查，不再从 GitHub 云端直接发送签到请求。它仍使用仓库 Secret `GLADOS_COOKIE` 做只读状态检查；真正签到请使用私有仓库中的 Mac 浏览器工作流。
 
-- `缺少 GLADOS_COOKIE`：Repository Secret 未配置。
-- `缺少 GLADOS_USER_AGENT`：请在浏览器里取得**真实 UA** 并设置相应变量。
-- `登录状态校验失败`：Cookie 失效或站点不接受当前会话。
-- `code=4`：服务端拒绝自动签到。即使 Cookie 有效也不意味着自动签到受支持；可通过官方网页手动签到。
-- `没有确认签到成功`：不把未知响应误报为成功。
-
-请尊重服务条款。站点认证策略可能发生变化，项目不承诺自动签到永久可用。
+请尊重 GLaDOS 和 Cloudflare 的验证机制。是否成功只以官网返回的明确结果为准。
