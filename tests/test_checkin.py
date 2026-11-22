@@ -194,6 +194,21 @@ class NetworkTests(unittest.TestCase):
             "签到成功",
         )
 
+    def test_turnstile_reason_is_reported_explicitly(self):
+        with self.assertRaisesRegex(checkin.CheckinError, "Cloudflare Turnstile"):
+            checkin.classify_checkin({
+                "code": 5,
+                "reason": "turnstile",
+                "message": "Cloudflare verification failed",
+            })
+
+    def test_turnstile_message_is_reported_without_reason_field(self):
+        with self.assertRaisesRegex(checkin.CheckinError, "Cloudflare Turnstile"):
+            checkin.classify_checkin({
+                "code": 5,
+                "message": "Cloudflare verification failed",
+            })
+
     def test_code_five_known_success_message_is_success(self):
         self.assertEqual(
             checkin.classify_checkin({"code": 5, "message": "Checkin! Got 5 Points"}),
