@@ -194,6 +194,25 @@ class NetworkTests(unittest.TestCase):
             "签到成功",
         )
 
+    def test_code_five_known_success_message_is_success(self):
+        self.assertEqual(
+            checkin.classify_checkin({"code": 5, "message": "Checkin! Got 5 Points"}),
+            "签到成功",
+        )
+
+    def test_code_five_known_repeat_message_is_already_done(self):
+        self.assertEqual(
+            checkin.classify_checkin({
+                "code": 5,
+                "message": "Checkin Repeats! Please Try Tomorrow",
+            }),
+            "今日已签到",
+        )
+
+    def test_code_five_unknown_message_remains_failure(self):
+        with self.assertRaisesRegex(checkin.CheckinError, "code=5"):
+            checkin.classify_checkin({"code": 5, "message": "unknown response"})
+
     def test_checkin_repeats_is_already_done(self):
         self.assertEqual(
             checkin.classify_checkin({
