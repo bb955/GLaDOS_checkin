@@ -6,6 +6,9 @@ on:
       - main
     paths:
       - .github/workflows/runGladosAction.yml
+      - checkin.py
+      - tests/test_checkin.py
+      - README.md
   workflow_dispatch:
     inputs:
       mode:
