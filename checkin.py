@@ -73,7 +73,7 @@ def build_headers(settings: Settings) -> dict[str, str]:
         "Sec-Fetch-Mode": "cors",
         "Sec-Fetch-Site": "same-origin",
     }
-    chrome = re.search(r"(?:Chrome|Chromium)/(\\d+)", user_agent)
+    chrome = re.search(r"(?:Chrome|Chromium)/(\d+)", user_agent)
     if chrome:
         major = chrome.group(1)
         if "Macintosh" in user_agent:
