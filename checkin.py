@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import math
 import os
 import sys
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +15,8 @@ import requests
 ORIGIN = "https://glados.cloud"
 STATUS_URL = f"{ORIGIN}/api/user/status"
 CHECKIN_URL = f"{ORIGIN}/api/user/checkin"
+CHECKIN_CHALLENGE_URL = f"{ORIGIN}/api/user/checkin/challenge"
+CHECKIN_CHALLENGE_DELAY = 2.7
 
 # Server messages which have historically meant genuine success / already done.
 SUCCESS_MARKERS = ("checkin!", "today's observation logged", "签到成功")
@@ -96,6 +101,8 @@ def classify_checkin(payload: dict[str, Any]) -> str:
         )
     if code in {"0", "1"} and any(mark in message for mark in ALREADY_MARKERS):
         return "今日已签到"
+    if code in {"0", "1"} and "today's observation logged" in message:
+        return "签到成功"
     if code == "0" and any(mark in message for mark in SUCCESS_MARKERS):
         return "签到成功"
     raise CheckinError(f"服务端没有确认签到成功（code={code}），不将任务标记为成功")
@@ -128,7 +135,40 @@ def run(mode: str, settings: Settings, session: requests.Session | None = None) 
             raise CheckinError("登录状态校验失败：当前 Cookie 未获账号状态接口认可")
         if mode == "status":
             return "Cookie 有效：账号状态查询通过（未发送签到请求）"
-        result = api_json(session, "POST", CHECKIN_URL, headers, json={"token": "glados.cloud"})
+        # GLaDOS's current console protocol requires a fresh one-time challenge
+        # for every check-in attempt. The nonce must be submitted to the same origin.
+        challenge = api_json(session, "GET", CHECKIN_CHALLENGE_URL, headers)
+        challenge_code = str(challenge.get("code", "missing"))
+        nonce = challenge.get("nonce")
+        ttl = challenge.get("ttl", 300000)
+        if (
+            challenge_code != "0"
+            or not isinstance(nonce, str)
+            or not nonce.strip()
+            or len(nonce) > 4096
+            or type(ttl) not in (int, float)
+            or not math.isfinite(float(ttl))
+            or ttl <= CHECKIN_CHALLENGE_DELAY * 1000
+        ):
+            raise CheckinError(
+                f"获取一次性签到验证失败（code={challenge_code}），本次未提交签到"
+            )
+
+        challenge_started = time.monotonic()
+        proof = hashlib.sha256(
+            (nonce + ".glados-observe-v1").encode("utf-8")
+        ).hexdigest()
+        time.sleep(CHECKIN_CHALLENGE_DELAY)
+        if (time.monotonic() - challenge_started) * 1000 >= ttl:
+            raise CheckinError("一次性签到验证已过期，本次未提交签到")
+
+        result = api_json(
+            session,
+            "POST",
+            CHECKIN_URL,
+            headers,
+            json={"token": "glados.cloud", "nonce": nonce, "proof": proof},
+        )
         return classify_checkin(result)
     finally:
         if created:
