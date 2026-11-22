@@ -1,16 +1,7 @@
-name: GLaDOS Daily Check-in (Rewritten)
+name: GLaDOS Cloud Status Check
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'status = only verify login; checkin = request actual daily check-in'
-        required: true
-        default: checkin
-        type: choice
-        options:
-          - checkin
-          - status
   schedule:
     # UTC 10:17 = Beijing/Taipei 18:17. GitHub does not guarantee on-time delivery.
     - cron: '17 10 * * *'
@@ -19,11 +10,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: glados-checkin
+  group: glados-cloud-status
   cancel-in-progress: false
 
 jobs:
-  checkin:
+  status:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -35,9 +26,7 @@ jobs:
         run: python -m pip install -r requirements.txt
       - name: Unit tests (no account access)
         run: python -m unittest discover -s tests -v
-      - name: Account status or real check-in
+      - name: Verify account session only (no check-in request)
         env:
           GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
-          GLADOS_USER_AGENT: ${{ secrets.GLADOS_USER_AGENT || vars.GLADOS_USER_AGENT || secrets.GLADOS_UA }}
-          CHECKIN_MODE: ${{ inputs.mode || 'checkin' }}
-        run: python checkin.py --mode "$CHECKIN_MODE"
+        run: python checkin.py --mode status
